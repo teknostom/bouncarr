@@ -37,12 +37,14 @@ pub async fn proxy_handler(
         .find(|app| app.name == app_name)
         .ok_or_else(|| {
             let available_apps: Vec<_> = state.config.arr_apps.iter().map(|a| &a.name).collect();
-            tracing::warn!(
-                "Request for unknown app '{}'. Available apps: {:?}. \
-                Make sure to configure URL Base in your *arr app settings.",
-                app_name,
-                available_apps
-            );
+            // Filter out noise from browser requests (.well-known, favicon, etc.)
+            if !app_name.starts_with('.') && app_name != "favicon.ico" {
+                tracing::warn!(
+                    "Request for unknown app '{}'. Available apps: {:?}",
+                    app_name,
+                    available_apps
+                );
+            }
             AppError::AppNotFound(format!(
                 "App '{}' not found. Available apps: {:?}. \
                 Hint: Configure URL Base to '/{app_name}' in your *arr app settings.",
@@ -53,8 +55,6 @@ pub async fn proxy_handler(
     // Build target URL by removing app prefix from path
     let path_and_query = build_upstream_path(req.uri(), &app_name);
     let target_url = format!("{}{}", arr_app.url, path_and_query);
-
-    tracing::debug!("Proxying {} to {}", req.method(), target_url);
 
     // Forward the request
     forward_request(&state, target_url, req).await
@@ -180,8 +180,9 @@ async fn handle_websocket_upgrade_raw(
         })?;
 
     // Build the WebSocket URL
-    // Keep the full path including the app name prefix, since the *arr app
-    // is configured with URL Base matching our prefix
+    // IMPORTANT: Keep the full path INCLUDING the app name prefix!
+    // The *arr app is configured with URL Base matching our prefix,
+    // so it expects WebSocket connections at /{app_name}/signalr/...
     let path = req.uri().path();
     let query = req
         .uri()
@@ -208,9 +209,12 @@ async fn handle_websocket_upgrade_raw(
         }
     }
 
-    let full_ws_url = format!("{}{}{}", target_url, path, query);
+    // Build full WebSocket URL, keeping the app prefix
+    // Remove trailing slash from base URL to avoid double slashes
+    let base_url = target_url.as_str().trim_end_matches('/');
+    let full_ws_url = format!("{}{}{}", base_url, path, query);
 
-    tracing::info!("Proxying WebSocket connection to: {}", full_ws_url);
+    tracing::debug!("Proxying WebSocket connection to upstream");
 
     proxy_websocket_connection(req, full_ws_url).await
 }

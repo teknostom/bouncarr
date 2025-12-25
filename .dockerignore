@@ -1,0 +1,29 @@
+# Rust build artifacts (except release binary)
+target/debug
+target/*/incremental
+target/*/deps
+target/*/*.d
+target/*/*.rlib
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Local config
+config.yaml
+
+# Documentation
+README.md
+*.md
+
+# CI/CD
+.github
+
+# Cargo lock (we copy it separately if needed)
+Cargo.lock

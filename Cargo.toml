@@ -36,9 +36,6 @@ thiserror = "1.0"
 # Cookie management
 tower-cookies = "0.10"
 
-# Rate limiting
-tower_governor = "0.4"
-
 # JWT support
 jsonwebtoken = "9"
 

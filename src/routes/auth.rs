@@ -28,15 +28,25 @@ pub async fn login(
     validate_login_request(&req)?;
 
     // Authenticate with Jellyfin
-    let (user_info, _jellyfin_token) = state
+    let (user_info, _jellyfin_token) = match state
         .jellyfin_client
         .authenticate(&req.username, &req.password)
-        .await?;
+        .await
+    {
+        Ok(result) => result,
+        Err(e) => {
+            tracing::warn!("Failed login attempt for user '{}': {}", req.username, e);
+            return Err(e);
+        }
+    };
 
     // Check if user is an administrator
     if !user_info.is_administrator {
+        tracing::warn!("Non-admin user '{}' attempted to login", user_info.username);
         return Err(AppError::Forbidden);
     }
+
+    tracing::info!("User '{}' logged in successfully", user_info.username);
 
     // Create JWT tokens
     let access_token = state.jwt_manager.create_access_token(&user_info)?;

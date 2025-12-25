@@ -32,7 +32,7 @@ pub async fn auth_middleware(
     let token = match extract_token(&req, cookies, &state.config.security.cookie_name) {
         Ok(t) => t,
         Err(e) => {
-            tracing::warn!("Failed to extract token for {}: {:?}", req.uri(), e);
+            tracing::debug!("No valid token found for {}", req.uri().path());
             if is_browser {
                 let redirect_url = format!(
                     "/bouncarr/login?redirect={}",
@@ -48,7 +48,9 @@ pub async fn auth_middleware(
     let claims = match state.jwt_manager.validate_token(&token, TokenType::Access) {
         Ok(c) => c,
         Err(e) => {
-            tracing::warn!("Failed to validate token for {}: {:?}", req.uri(), e);
+            // Only log validation failures at debug level to reduce noise
+            // (common after server restart with old cookies)
+            tracing::debug!("Token validation failed for {}: {:?}", req.uri().path(), e);
             if is_browser {
                 let redirect_url = format!(
                     "/bouncarr/login?redirect={}",

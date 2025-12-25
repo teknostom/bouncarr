@@ -15,9 +15,6 @@ use axum::{
 };
 use std::sync::Arc;
 use tower_cookies::CookieManagerLayer;
-use tower_governor::{
-    GovernorLayer, governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor,
-};
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
@@ -34,7 +31,7 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "bouncarr=debug,tower_http=debug".into()),
+                .unwrap_or_else(|_| "bouncarr=info,tower_http=info".into()),
         )
         .init();
 
@@ -123,36 +120,13 @@ async fn shutdown_signal() {
 }
 
 fn build_router(state: Arc<AppState>) -> Router {
-    // Rate limiter for login endpoint: 3 attempts, then cooldown period
-    // Implementation: Very slow token refill rate with burst of 3
-    // With per_second(1) and burst(3): tokens refill at 1 per second
-    // After using all 3 attempts, user recovers in 3 seconds (not ideal, but closest we can get)
-    // NOTE: tower_governor's API limitations prevent exact "5 minute freeze" implementation
-    // For stricter rate limiting, consider implementing custom login attempt tracking
-    let login_governor_conf = Arc::new(
-        GovernorConfigBuilder::default()
-            .key_extractor(SmartIpKeyExtractor)
-            .per_second(1) // 1 token per second
-            .burst_size(3) // Allow burst of 3
-            .use_headers()
-            .finish()
-            .expect("Failed to create rate limiter config"),
-    );
-
-    // Login route with rate limiting applied
-    let login_route = Router::new()
-        .route("/bouncarr/api/auth/login", post(routes::login))
-        .layer(GovernorLayer {
-            config: login_governor_conf,
-        });
-
-    // Other public routes (no rate limiting)
+    // Public routes (no authentication required)
     let public_routes = Router::new()
         .route("/health", get(routes::health_check))
         .route("/bouncarr/login", get(routes::serve_login_page))
+        .route("/bouncarr/api/auth/login", post(routes::login))
         .route("/bouncarr/api/auth/refresh", post(routes::refresh))
-        .route("/bouncarr/api/auth/logout", post(routes::logout))
-        .merge(login_route);
+        .route("/bouncarr/api/auth/logout", post(routes::logout));
 
     // Protected routes (authentication required)
     let protected_routes = Router::new()

@@ -31,25 +31,18 @@ pub async fn proxy_websocket_connection(
 pub async fn handle_websocket_proxy(mut client_socket: WebSocket, target_url: String) {
     use axum::extract::ws::Message;
 
-    tracing::info!(
-        "Attempting to connect to upstream WebSocket: {}",
-        target_url
-    );
+    tracing::debug!("Connecting to upstream WebSocket");
 
     // Connect to the upstream WebSocket server (URL should already be ws://)
     let upstream_result = connect_async(&target_url).await;
 
     let (upstream_ws, _response) = match upstream_result {
         Ok(conn) => {
-            tracing::info!("Successfully connected to upstream WebSocket");
+            tracing::debug!("WebSocket connection established");
             conn
         }
         Err(e) => {
-            tracing::error!(
-                "Failed to connect to upstream WebSocket '{}': {}",
-                target_url,
-                e
-            );
+            tracing::error!("Failed to connect to upstream WebSocket: {}", e);
             // Send close frame with error to client
             let error_message = format!("Failed to connect to upstream: {}", e);
             let _ = client_socket
