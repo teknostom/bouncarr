@@ -19,6 +19,9 @@ arr_apps:
 server:
   host: 0.0.0.0
   port: 3000
+  # HTTP request timeout in seconds. Set to -1 to disable timeout (no timeout)
+  # Recommended: -1 for local deployments, 60-120 for production
+  request_timeout_seconds: -1
 
 security:
   # Access token expires at end of each day
@@ -33,3 +36,10 @@ security:
 
   # Set to true in production (requires HTTPS)
   secure_cookies: false
+
+  # JWT secret key for signing tokens
+  # IMPORTANT: Set this in production to persist sessions across restarts!
+  # If not set, a random secret is generated on startup (all tokens invalidated on restart)
+  # Can also be set via JWT_SECRET environment variable
+  # Generate a secure secret with: openssl rand -base64 32
+  # jwt_secret: "your-secret-key-here"

@@ -7,7 +7,7 @@ edition = "2024"
 # Web framework
 axum = { version = "0.7", features = ["ws"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["fs", "trace", "cors"] }
+tower-http = { version = "0.6", features = ["fs", "trace"] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -36,8 +36,8 @@ thiserror = "1.0"
 # Cookie management
 tower-cookies = "0.10"
 
-# Environment variables
-dotenvy = "0.15"
+# Rate limiting
+tower_governor = "0.4"
 
 # JWT support
 jsonwebtoken = "9"
@@ -59,3 +59,4 @@ base64 = "0.22"
 
 # URL encoding
 urlencoding = "2.1"
+url = "2.5.7"

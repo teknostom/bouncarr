@@ -50,27 +50,8 @@ pub async fn proxy_handler(
             ))
         })?;
 
-    // Build target URL
-    let path_and_query = req
-        .uri()
-        .path_and_query()
-        .map(|pq| {
-            // Remove the /app_name prefix from the path
-            let path = pq.path();
-            let prefix = format!("/{}", app_name);
-            let new_path = path.strip_prefix(&prefix).unwrap_or(path);
-
-            // If path is empty after stripping, default to "/"
-            let new_path = if new_path.is_empty() { "/" } else { new_path };
-
-            if let Some(query) = pq.query() {
-                format!("{}?{}", new_path, query)
-            } else {
-                new_path.to_string()
-            }
-        })
-        .unwrap_or_else(|| "/".to_string());
-
+    // Build target URL by removing app prefix from path
+    let path_and_query = build_upstream_path(req.uri(), &app_name);
     let target_url = format!("{}{}", arr_app.url, path_and_query);
 
     tracing::debug!("Proxying {} to {}", req.method(), target_url);
@@ -150,6 +131,33 @@ fn should_skip_header(name: &str) -> bool {
     )
 }
 
+/// Build the upstream path by removing the app name prefix from the request URI
+///
+/// For example:
+/// - `/sonarr/api/v3/series` -> `/api/v3/series`
+/// - `/radarr` -> `/`
+/// - `/radarr/` -> `/`
+fn build_upstream_path(uri: &axum::http::Uri, app_name: &str) -> String {
+    uri.path_and_query()
+        .map(|pq| {
+            // Remove the /app_name prefix from the path
+            let path = pq.path();
+            let prefix = format!("/{}", app_name);
+            let new_path = path.strip_prefix(&prefix).unwrap_or(path);
+
+            // If path is empty after stripping, default to "/"
+            let new_path = if new_path.is_empty() { "/" } else { new_path };
+
+            // Append query string if present
+            if let Some(query) = pq.query() {
+                format!("{}?{}", new_path, query)
+            } else {
+                new_path.to_string()
+            }
+        })
+        .unwrap_or_else(|| "/".to_string())
+}
+
 async fn handle_websocket_upgrade_raw(
     state: Arc<AppState>,
     app_name: String,
@@ -182,11 +190,25 @@ async fn handle_websocket_upgrade_raw(
         .unwrap_or_default();
 
     // Convert HTTP URL to WebSocket URL
-    let target_ws_url = arr_app
-        .url
-        .replace("http://", "ws://")
-        .replace("https://", "wss://");
-    let full_ws_url = format!("{}{}{}", target_ws_url, path, query);
+    let mut target_url = url::Url::parse(&arr_app.url)
+        .map_err(|e| AppError::ProxyError(format!("Invalid app URL: {}", e)))?;
+
+    match target_url.scheme() {
+        "http" => target_url
+            .set_scheme("ws")
+            .map_err(|_| AppError::ProxyError("Failed to set WebSocket scheme".to_string()))?,
+        "https" => target_url
+            .set_scheme("wss")
+            .map_err(|_| AppError::ProxyError("Failed to set WebSocket scheme".to_string()))?,
+        scheme => {
+            return Err(AppError::ProxyError(format!(
+                "Invalid URL scheme '{}', expected http or https",
+                scheme
+            )));
+        }
+    }
+
+    let full_ws_url = format!("{}{}{}", target_url, path, query);
 
     tracing::info!("Proxying WebSocket connection to: {}", full_ws_url);
 

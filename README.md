@@ -108,10 +108,73 @@ User Browser → Bouncarr (this app) → Jellyfin (auth)
 
 ## Production Deployment
 
-For production, run behind a reverse proxy (nginx, Traefik) with:
-- TLS/HTTPS termination
-- Proper domain name
-- Set `secure_cookies: true` in config
+For production deployment, follow these guidelines:
+
+### Essential Security Configuration
+
+1. **Set JWT Secret**: Configure a persistent JWT secret to prevent session invalidation on restart
+   ```yaml
+   security:
+     jwt_secret: "your-secure-random-secret-here"
+   ```
+   Generate a secure secret with: `openssl rand -base64 32`
+
+   Or use environment variable: `JWT_SECRET=your-secret cargo run`
+
+2. **Enable Secure Cookies**: Requires HTTPS
+   ```yaml
+   security:
+     secure_cookies: true
+   ```
+
+3. **Configure Request Timeout**: Set appropriate timeout for your environment
+   ```yaml
+   server:
+     request_timeout_seconds: 60  # 60 seconds recommended for production
+   ```
+
+### Reverse Proxy Setup
+
+Run behind a reverse proxy (nginx, Traefik, Caddy) with:
+- **TLS/HTTPS termination** - Secure cookies require HTTPS
+- **Proper domain name** - For CORS and cookie security
+- **Rate limiting** - Protect against brute force attacks (not built into Bouncarr yet)
+
+Example nginx configuration:
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name bouncarr.example.com;
+
+    ssl_certificate /path/to/cert.pem;
+    ssl_certificate_key /path/to/key.pem;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # WebSocket support
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+```
+
+### Environment Variables
+
+Bouncarr supports the following environment variables:
+- `JWT_SECRET` - Override JWT secret key (recommended for production)
+- `RUST_LOG` - Configure logging level (e.g., `bouncarr=info,tower_http=warn`)
+
+### Monitoring
+
+- **Health Check Endpoint**: `GET /health` returns `{"status":"ok","service":"bouncarr"}`
+- **Graceful Shutdown**: Handles SIGTERM and Ctrl+C gracefully
+- **Structured Logging**: All logs use tracing for easy parsing
 
 ## Development
 
@@ -128,6 +191,31 @@ cargo check
 # Run tests
 cargo test
 ```
+
+### Logging Configuration
+
+Bouncarr uses the standard Rust `RUST_LOG` environment variable for logging configuration:
+
+```bash
+# Default: debug level for bouncarr, debug for tower_http
+cargo run
+
+# Set custom log level
+RUST_LOG=bouncarr=info cargo run
+
+# Enable debug for all modules
+RUST_LOG=debug cargo run
+
+# Fine-grained control
+RUST_LOG=bouncarr=debug,tower_http=info,reqwest=warn cargo run
+```
+
+Available log levels (from most to least verbose):
+- `trace` - Very detailed debugging information
+- `debug` - Debugging information (default for bouncarr)
+- `info` - General informational messages
+- `warn` - Warning messages
+- `error` - Error messages only
 
 ## Configuration Details
 

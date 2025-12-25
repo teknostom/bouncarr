@@ -28,7 +28,7 @@ pub async fn proxy_websocket_connection(
     Ok(ws.on_upgrade(move |socket| handle_websocket_proxy(socket, target_url)))
 }
 
-pub async fn handle_websocket_proxy(client_socket: WebSocket, target_url: String) {
+pub async fn handle_websocket_proxy(mut client_socket: WebSocket, target_url: String) {
     use axum::extract::ws::Message;
 
     tracing::info!(
@@ -39,7 +39,7 @@ pub async fn handle_websocket_proxy(client_socket: WebSocket, target_url: String
     // Connect to the upstream WebSocket server (URL should already be ws://)
     let upstream_result = connect_async(&target_url).await;
 
-    let (upstream_ws, response) = match upstream_result {
+    let (upstream_ws, _response) = match upstream_result {
         Ok(conn) => {
             tracing::info!("Successfully connected to upstream WebSocket");
             conn
@@ -50,11 +50,20 @@ pub async fn handle_websocket_proxy(client_socket: WebSocket, target_url: String
                 target_url,
                 e
             );
+            // Send close frame with error to client
+            let error_message = format!("Failed to connect to upstream: {}", e);
+            let _ = client_socket
+                .send(Message::Close(Some(axum::extract::ws::CloseFrame {
+                    code: 1011, // Internal server error
+                    reason: error_message.into(),
+                })))
+                .await;
             return;
         }
     };
 
-    tracing::debug!("Upstream WebSocket response: {:?}", response);
+    #[cfg(debug_assertions)]
+    tracing::debug!("Upstream WebSocket response: {:?}", _response);
 
     // Split both WebSocket connections
     let (mut client_sink, mut client_stream) = client_socket.split();
@@ -63,81 +72,63 @@ pub async fn handle_websocket_proxy(client_socket: WebSocket, target_url: String
     // Create two tasks to forward messages in both directions
     let client_to_upstream = async move {
         while let Some(msg) = client_stream.next().await {
-            match msg {
-                Ok(Message::Text(text)) => {
-                    if upstream_sink
-                        .send(TungsteniteMessage::Text(text))
-                        .await
-                        .is_err()
-                    {
-                        break;
-                    }
-                }
+            let result = match msg {
+                Ok(Message::Text(text)) => upstream_sink.send(TungsteniteMessage::Text(text)).await,
                 Ok(Message::Binary(data)) => {
-                    if upstream_sink
+                    upstream_sink
                         .send(TungsteniteMessage::Binary(data.to_vec()))
                         .await
-                        .is_err()
-                    {
-                        break;
-                    }
                 }
                 Ok(Message::Ping(data)) => {
-                    if upstream_sink
+                    upstream_sink
                         .send(TungsteniteMessage::Ping(data.to_vec()))
                         .await
-                        .is_err()
-                    {
-                        break;
-                    }
                 }
                 Ok(Message::Pong(data)) => {
-                    if upstream_sink
+                    upstream_sink
                         .send(TungsteniteMessage::Pong(data.to_vec()))
                         .await
-                        .is_err()
-                    {
-                        break;
-                    }
                 }
                 Ok(Message::Close(_)) => {
                     let _ = upstream_sink.send(TungsteniteMessage::Close(None)).await;
                     break;
                 }
-                Err(_) => break,
+                Err(e) => {
+                    tracing::debug!("Client WebSocket error: {}", e);
+                    break;
+                }
+            };
+
+            if result.is_err() {
+                tracing::debug!("Failed to send message to upstream, closing connection");
+                break;
             }
         }
     };
 
     let upstream_to_client = async move {
         while let Some(msg) = upstream_stream.next().await {
-            match msg {
-                Ok(TungsteniteMessage::Text(text)) => {
-                    if client_sink.send(Message::Text(text)).await.is_err() {
-                        break;
-                    }
-                }
+            let result = match msg {
+                Ok(TungsteniteMessage::Text(text)) => client_sink.send(Message::Text(text)).await,
                 Ok(TungsteniteMessage::Binary(data)) => {
-                    if client_sink.send(Message::Binary(data)).await.is_err() {
-                        break;
-                    }
+                    client_sink.send(Message::Binary(data)).await
                 }
-                Ok(TungsteniteMessage::Ping(data)) => {
-                    if client_sink.send(Message::Ping(data)).await.is_err() {
-                        break;
-                    }
-                }
-                Ok(TungsteniteMessage::Pong(data)) => {
-                    if client_sink.send(Message::Pong(data)).await.is_err() {
-                        break;
-                    }
-                }
+                Ok(TungsteniteMessage::Ping(data)) => client_sink.send(Message::Ping(data)).await,
+                Ok(TungsteniteMessage::Pong(data)) => client_sink.send(Message::Pong(data)).await,
                 Ok(TungsteniteMessage::Close(_)) => {
                     let _ = client_sink.send(Message::Close(None)).await;
                     break;
                 }
-                Err(_) => break,
-                _ => {}
+                Err(e) => {
+                    tracing::debug!("Upstream WebSocket error: {}", e);
+                    break;
+                }
+                _ => continue,
+            };
+
+            if result.is_err() {
+                tracing::debug!("Failed to send message to client, closing connection");
+                break;
             }
         }
     };

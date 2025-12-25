@@ -90,15 +90,18 @@ pub async fn auth_middleware(
 fn extract_token(req: &Request<Body>, cookies: Cookies, cookie_name: &str) -> Result<String> {
     // Try to get token from cookie first
     if let Some(cookie) = cookies.get(cookie_name) {
+        // Note: Logging cookie NAME only (not the value/token itself) - safe for production
         tracing::debug!("Found token in cookie: {}", cookie_name);
         return Ok(cookie.value().to_string());
     }
 
     // Try to get token from Authorization header
+    // Using let-chain syntax for clean sequential error handling
     if let Some(auth_header) = req.headers().get(header::AUTHORIZATION)
         && let Ok(auth_str) = auth_header.to_str()
         && let Some(token) = auth_str.strip_prefix("Bearer ")
     {
+        // Note: Not logging the actual token value - safe for production
         tracing::debug!("Found token in Authorization header");
         return Ok(token.to_string());
     }
