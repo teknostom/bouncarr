@@ -1,0 +1,35 @@
+# Bouncarr Configuration File
+# Copy this file to config.yaml and adjust the values
+
+jellyfin:
+  url: http://jellyfin:8096
+  api_key: your_jellyfin_api_key_here
+
+# Define your *arr applications
+arr_apps:
+  - name: sonarr
+    url: http://sonarr:8989
+  - name: radarr
+    url: http://radarr:7878
+  - name: lidarr
+    url: http://lidarr:8686
+  - name: bazarr
+    url: http://bazarr:6767
+
+server:
+  host: 0.0.0.0
+  port: 3000
+
+security:
+  # Access token expires at end of each day
+  access_token_expiry_hours: 24
+
+  # Refresh token expires after 30 days
+  refresh_token_expiry_days: 30
+
+  # Cookie names
+  cookie_name: bouncarr_token
+  refresh_cookie_name: bouncarr_refresh
+
+  # Set to true in production (requires HTTPS)
+  secure_cookies: false

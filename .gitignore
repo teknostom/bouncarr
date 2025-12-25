@@ -1,0 +1,20 @@
+# Rust build artifacts
+/target
+debug/
+**/*.rs.bk
+*.pdb
+
+# Configuration files (keep example)
+config.yaml
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
